@@ -1,0 +1,11 @@
+package pe.edu.upeu.PharmaBackend.repository;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import pe.edu.upeu.PharmaBackend.entity.Categoria;
+
+public interface CategoriaRepository extends JpaRepository<Categoria, Long> {
+    Boolean existsByNombreIgnoreCase(String nombre);
+
+    Boolean existsByNombreIgnoreCaseAndIdNot(String nombre, Long id);
+
+}
