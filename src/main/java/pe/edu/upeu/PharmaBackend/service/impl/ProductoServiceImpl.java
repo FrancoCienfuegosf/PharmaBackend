@@ -109,7 +109,13 @@ public class ProductoServiceImpl implements ProductoService {
                         "Producto no encontrado con id: "+ aLong
                 )
         );
-        productoRepository.delete(producto);
+
+        if (Boolean.FALSE.equals(producto.getEstado())) {
+            throw new ReglaNegocioException("El producto ya está inactivo");
+        }
+
+        producto.setEstado(false);
+        productoRepository.save(producto);
     }
 
     @Override
