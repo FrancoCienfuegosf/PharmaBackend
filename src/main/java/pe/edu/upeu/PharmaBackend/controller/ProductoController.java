@@ -10,7 +10,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import pe.edu.upeu.PharmaBackend.dto.PaginaResponseDTO;
 import pe.edu.upeu.PharmaBackend.dto.ProductoRequestDTO;
 import pe.edu.upeu.PharmaBackend.dto.ProductoResponseDTO;
 import pe.edu.upeu.PharmaBackend.service.service.ProductoService;
@@ -26,8 +28,15 @@ public class ProductoController {
     }
 
     @GetMapping
-    public ResponseEntity<Iterable<ProductoResponseDTO>> findAll() {
-        return ResponseEntity.ok(productoService.readAll());
+    public ResponseEntity<PaginaResponseDTO<ProductoResponseDTO>> findAll(
+            @RequestParam(defaultValue = "0") int pagina,
+            @RequestParam(defaultValue = "10") int tamanio,
+            @RequestParam(defaultValue = "nombre") String ordenarPor,
+            @RequestParam(defaultValue = "asc") String direccion) {
+
+        return ResponseEntity.ok(
+                productoService.listar(pagina, tamanio, ordenarPor, direccion)
+        );
     }
 
     @GetMapping("/{id}")

@@ -1,10 +1,15 @@
 package pe.edu.upeu.PharmaBackend.service.impl;
 
-
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pe.edu.upeu.PharmaBackend.dto.PaginaResponseDTO;
 import pe.edu.upeu.PharmaBackend.dto.ProductoRequestDTO;
 import pe.edu.upeu.PharmaBackend.dto.ProductoResponseDTO;
 import pe.edu.upeu.PharmaBackend.entity.Categoria;
@@ -19,6 +24,8 @@ import pe.edu.upeu.PharmaBackend.service.service.ProductoService;
 @Service
 public class ProductoServiceImpl implements ProductoService {
     private static final Logger LOG = LoggerFactory.getLogger(ProductoServiceImpl.class);
+
+    private static final Set<String> CAMPOS_ORDEN = Set.of("id", "nombre", "precio", "stock");
 
     private final ProductoRepository productoRepository;
     private final CategoriaRepository categoriaRepository;
@@ -112,6 +119,30 @@ public class ProductoServiceImpl implements ProductoService {
                 .stream()
                 .map(this::convertirResponse)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PaginaResponseDTO<ProductoResponseDTO> listar(
+            int pagina, int tamanio, String ordenarPor, String direccion) {
+
+        if (!CAMPOS_ORDEN.contains(ordenarPor)) {
+            throw new ReglaNegocioException(
+                    "No se puede ordenar por " + ordenarPor
+                            + ". Use: id, nombre, precio o stock");
+        }
+
+        Sort.Direction dir = "desc".equalsIgnoreCase(direccion)
+                ? Sort.Direction.DESC : Sort.Direction.ASC;
+
+        Pageable pageable = PageRequest.of(
+                Math.max(pagina, 0), Math.max(tamanio, 1), Sort.by(dir, ordenarPor));
+
+        Page<ProductoResponseDTO> resultado = productoRepository
+                .findAll(pageable)
+                .map(this::convertirResponse);
+
+        return PaginaResponseDTO.de(resultado);
     }
 
     private Categoria buscarCategoria(Long categoriaId){
