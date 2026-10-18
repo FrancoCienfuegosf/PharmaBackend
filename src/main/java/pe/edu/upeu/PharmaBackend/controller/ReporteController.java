@@ -1,7 +1,7 @@
 package pe.edu.upeu.PharmaBackend.controller;
-
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -15,6 +15,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/reportes")
+@PreAuthorize("hasAuthority('REPORTES_VER')")
 public class ReporteController {
 
     private final ReporteService reporteService;
@@ -24,7 +25,6 @@ public class ReporteController {
 
         this.reporteService = reporteService;
     }
-
 
     @GetMapping("/ventas-por-categoria")
     public ResponseEntity<List<VentaPorCategoriaDTO>> ventasPorCategoria(
@@ -41,7 +41,6 @@ public class ReporteController {
                 reporteService.ventasPorCategoria(desde, hasta)
         );
     }
-
 
     @GetMapping("/productos-mas-vendidos")
     public ResponseEntity<List<ProductoMasVendidoDTO>> productosMasVendidos(
