@@ -1,10 +1,13 @@
 package pe.edu.upeu.PharmaBackend.service.impl;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pe.edu.upeu.PharmaBackend.dto.auth.AsignarRolesRequestDTO;
+import pe.edu.upeu.PharmaBackend.dto.auth.CambioEstadoRequestDTO;
 import pe.edu.upeu.PharmaBackend.dto.auth.EmpleadoResponseDTO;
 import pe.edu.upeu.PharmaBackend.dto.auth.RolResponseDTO;
 import pe.edu.upeu.PharmaBackend.dto.auth.UsuarioRequestDTO;
@@ -19,21 +22,26 @@ import pe.edu.upeu.PharmaBackend.repository.EmpleadoRepository;
 import pe.edu.upeu.PharmaBackend.repository.RolRepository;
 import pe.edu.upeu.PharmaBackend.repository.UsuarioRepository;
 import pe.edu.upeu.PharmaBackend.service.service.UsuarioService;
+
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
+
 @Service
 public class UsuarioServiceImpl implements UsuarioService {
+
     private static final Logger log =
             LoggerFactory.getLogger(UsuarioServiceImpl.class);
+
     private final UsuarioRepository usuarioRepository;
     private final EmpleadoRepository empleadoRepository;
     private final RolRepository rolRepository;
     private final PasswordEncoder passwordEncoder;
     private final UsuarioMapper usuarioMapper;
+
     public UsuarioServiceImpl(
             UsuarioRepository usuarioRepository,
             EmpleadoRepository empleadoRepository,
@@ -46,36 +54,44 @@ public class UsuarioServiceImpl implements UsuarioService {
         this.passwordEncoder = passwordEncoder;
         this.usuarioMapper = usuarioMapper;
     }
+
     /*
      * Crea la cuenta de un empleado y le asigna uno o varios roles.
      *
      * Reglas:
-     * - el empleado existe (404) y esta activo (409);
-     * - el empleado aun no tiene usuario (409): relacion 1 a 1;
-     * - todos los roles existen (404): relacion muchos a muchos;
-     * - el username no se repite (409).
+     *  - el empleado existe (404) y esta activo (409);
+     *  - el empleado aun no tiene usuario (409): relacion 1 a 1;
+     *  - todos los roles existen (404): relacion muchos a muchos;
+     *  - el username no se repite (409).
      */
     @Override
     @Transactional
     public UsuarioResponseDTO crear(UsuarioRequestDTO request) {
+
         String username = request.getUsername().trim().toLowerCase(Locale.ROOT);
+
         log.info("Registrando usuario={} empleadoId={} rolIds={}",
                 username, request.getEmpleadoId(), request.getRolIds());
+
         Empleado empleado = empleadoRepository.findById(request.getEmpleadoId())
                 .orElseThrow(() -> new RecursoNoEncontradoException(
                         "Empleado no encontrado con id: " + request.getEmpleadoId()));
+
         if (!Boolean.TRUE.equals(empleado.getEstado())) {
             throw new ReglaNegocioException(
                     "El empleado " + empleado.getNombreCompleto() + " está inactivo");
         }
+
         if (usuarioRepository.existsByEmpleadoId(empleado.getId())) {
             throw new ReglaNegocioException(
                     "El empleado " + empleado.getNombreCompleto() + " ya tiene un usuario");
         }
+
         if (usuarioRepository.existsByUsernameIgnoreCase(username)) {
             throw new ReglaNegocioException(
                     "Ya existe un usuario con el nombre: " + username);
         }
+
         List<Rol> roles = rolRepository.findAllById(request.getRolIds());
         if (roles.size() != request.getRolIds().size()) {
             Set<Long> encontrados = roles.stream().map(Rol::getId).collect(Collectors.toSet());
@@ -83,22 +99,28 @@ public class UsuarioServiceImpl implements UsuarioService {
             faltantes.removeAll(encontrados);
             throw new RecursoNoEncontradoException("Roles no encontrados: " + faltantes);
         }
-// BCrypt solo admite 72 BYTES: una ñ o una tilde ocupan 2 bytes en UTF-8
+
+        // BCrypt solo admite 72 BYTES: una ñ o una tilde ocupan 2 bytes en UTF-8
         if (request.getPassword().getBytes(StandardCharsets.UTF_8).length > 72) {
             throw new ReglaNegocioException("La contraseña no puede superar 72 bytes");
         }
+
         Usuario usuario = new Usuario();
         usuario.setUsername(username);
-// Se guarda el hash BCrypt, nunca la contrasena en texto plano
+        // Se guarda el hash BCrypt, nunca la contrasena en texto plano
         usuario.setPassword(passwordEncoder.encode(request.getPassword()));
         usuario.setEstado(true);
         usuario.setEmpleado(empleado);
         usuario.setRoles(new HashSet<>(roles));
+
         Usuario guardado = usuarioRepository.save(usuario);
+
         log.info("Usuario registrado id={} usuario={} roles={}",
                 guardado.getId(), username, usuarioMapper.nombresRoles(roles));
+
         return usuarioMapper.toUsuarioResponse(guardado);
     }
+
     @Override
     @Transactional(readOnly = true)
     public List<UsuarioResponseDTO> listar() {
@@ -107,15 +129,18 @@ public class UsuarioServiceImpl implements UsuarioService {
                 .map(usuarioMapper::toUsuarioResponse)
                 .toList();
     }
+
     @Override
     @Transactional(readOnly = true)
     public List<EmpleadoResponseDTO> listarEmpleados() {
         Set<Long> conUsuario = usuarioRepository.findEmpleadoIdsConUsuario();
+
         return empleadoRepository.findAll(Sort.by("apellidos", "nombres"))
                 .stream()
                 .map(e -> usuarioMapper.toEmpleadoResponse(e, conUsuario.contains(e.getId())))
                 .toList();
     }
+
     @Override
     @Transactional(readOnly = true)
     public List<RolResponseDTO> listarRoles() {
@@ -124,5 +149,77 @@ public class UsuarioServiceImpl implements UsuarioService {
                 .map(usuarioMapper::toRolResponse)
                 .toList();
     }
-}
 
+    /*
+     * Reemplaza el conjunto de roles de un usuario (B2).
+     *
+     * Reglas:
+     *  - el usuario existe (404);
+     *  - todos los roles existen (404);
+     *  - un ADMIN no puede quitarse a si mismo el rol ADMIN (409).
+     */
+    @Override
+    @Transactional
+    public UsuarioResponseDTO asignarRoles(Long id, AsignarRolesRequestDTO request, String usernameActual) {
+
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException(
+                        "Usuario no encontrado con id: " + id));
+
+        List<Rol> roles = rolRepository.findAllById(request.getRolIds());
+        if (roles.size() != request.getRolIds().size()) {
+            Set<Long> encontrados = roles.stream().map(Rol::getId).collect(Collectors.toSet());
+            Set<Long> faltantes = new HashSet<>(request.getRolIds());
+            faltantes.removeAll(encontrados);
+            throw new RecursoNoEncontradoException("Roles no encontrados: " + faltantes);
+        }
+
+        // El username sale del token, no del cuerpo
+        boolean esElMismo = usuario.getUsername().equalsIgnoreCase(usernameActual);
+        boolean conservaAdmin = roles.stream().anyMatch(r -> "ADMIN".equals(r.getNombre()));
+        if (esElMismo && !conservaAdmin) {
+            throw new ReglaNegocioException(
+                    "Un administrador no puede quitarse a sí mismo el rol ADMIN");
+        }
+
+        // JPA actualiza las filas de usuario_roles
+        usuario.setRoles(new HashSet<>(roles));
+
+        log.info("Roles actualizados: usuario={} roles={}",
+                usuario.getUsername(), usuarioMapper.nombresRoles(roles));
+
+        return usuarioMapper.toUsuarioResponse(usuario);
+    }
+
+    /*
+     * Activa o desactiva un usuario (B3). No se borra: se conserva el historial.
+     *
+     * Reglas:
+     *  - el usuario existe (404);
+     *  - un ADMIN no puede desactivarse a si mismo (409).
+     *
+     * Un usuario desactivado deja de entrar: el JwtAuthenticationFilter
+     * consulta la base en cada peticion y responde 401.
+     */
+    @Override
+    @Transactional
+    public UsuarioResponseDTO cambiarEstado(Long id, CambioEstadoRequestDTO request, String usernameActual) {
+
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException(
+                        "Usuario no encontrado con id: " + id));
+
+        boolean esElMismo = usuario.getUsername().equalsIgnoreCase(usernameActual);
+        if (esElMismo && !request.getEstado()) {
+            throw new ReglaNegocioException(
+                    "Un administrador no puede desactivarse a sí mismo");
+        }
+
+        usuario.setEstado(request.getEstado());
+
+        log.info("Estado actualizado: usuario={} estado={}",
+                usuario.getUsername(), request.getEstado());
+
+        return usuarioMapper.toUsuarioResponse(usuario);
+    }
+}
