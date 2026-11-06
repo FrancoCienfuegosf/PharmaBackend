@@ -46,6 +46,9 @@ public class SecurityConfig {
     private static final String[] RUTAS_PUBLICAS = {
             "/api/v1/auth/login",
             "/api/health",
+            // Actuator: solo el estado de salud es publico
+            "/actuator/health",
+            "/actuator/health/**",
             "/swagger-ui.html",
             "/swagger-ui/**",
             "/v3/api-docs/**",
@@ -102,6 +105,9 @@ public class SecurityConfig {
 
                                 "/api/v1/empleados/**", "/api/v1/roles/**")
                         .hasAuthority(USUARIOS_ADMINISTRAR.name())
+// Resto de Actuator (metrics, info): solo quien administra usuarios
+                        .requestMatchers("/actuator/**")
+                        .hasAuthority(USUARIOS_ADMINISTRAR.name())
 // Todo lo demas (auth/me, reportes...) exige un usuario
 // autenticado; los reportes ademas usan @PreAuthorize.
                         .anyRequest().authenticated())
@@ -130,4 +136,3 @@ public class SecurityConfig {
         return configuration.getAuthenticationManager();
     }
 }
-
