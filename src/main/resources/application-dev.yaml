@@ -9,7 +9,7 @@ spring:
     database-platform: org.hibernate.dialect.OracleDialect
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false   # el SQL se registra con logging.level.org.hibernate.SQL
 
     properties:
       hibernate:
@@ -26,3 +26,13 @@ app:
   jwt:
     secret: w9Z6dP/dzykNH/uiI3Z/KGjBlP0H4Ji+Tuq4fm2cTNuLD4jWafu1gBL74V2SJEvy
     expiracion-minutos: 60
+  # Origenes permitidos: ng serve (4200) y la SPA servida por Nginx (8081)
+  cors:
+    allowed-origins: http://localhost:4200,http://localhost:8081
+
+# SQL de Hibernate por el logger, para contar las consultas
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{requestId}] %logger{36} - %msg%n"
