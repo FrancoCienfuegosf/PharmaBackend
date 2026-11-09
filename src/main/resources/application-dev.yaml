@@ -34,5 +34,8 @@ app:
 logging:
   level:
     org.hibernate.SQL: DEBUG
+  file:
+    name: logs/pharma-backend.log   # tambien en archivo, para buscar por requestId
   pattern:
     console: "%d{HH:mm:ss.SSS} %-5level [%X{requestId}] %logger{36} - %msg%n"
+    file: "%d %-5level [%X{requestId}] %logger{36} - %msg%n"
