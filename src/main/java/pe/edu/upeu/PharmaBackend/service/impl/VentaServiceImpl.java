@@ -3,11 +3,17 @@ package pe.edu.upeu.PharmaBackend.service.impl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.context.ApplicationEventPublisher;            // ← S14
+import org.springframework.data.domain.Page;                             // ← S14 pag
+import org.springframework.data.domain.PageRequest;                      // ← S14 pag
+import org.springframework.data.domain.Pageable;                         // ← S14 pag
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pe.edu.upeu.PharmaBackend.auditoria.EventoAuditoria;             // ← S14
 import pe.edu.upeu.PharmaBackend.dto.DetalleVentaRequestDTO;
 import pe.edu.upeu.PharmaBackend.dto.DetalleVentaResponseDTO;
+import pe.edu.upeu.PharmaBackend.dto.PaginaResponseDTO;                  // ← S14 pag
 import pe.edu.upeu.PharmaBackend.dto.VentaRequestDTO;
 import pe.edu.upeu.PharmaBackend.dto.VentaResponseDTO;
 import pe.edu.upeu.PharmaBackend.entity.Cliente;
@@ -36,6 +42,7 @@ public class VentaServiceImpl implements VentaService {
     private final VentaRepository ventaRepository;
     private final ClienteRepository clienteRepository;
     private final ProductoRepository productoRepository;
+    private final ApplicationEventPublisher eventos;                      // ← S14
 
     private static final Map<String, String> CAMPOS_ORDENABLES = Map.of(
             "id", "id",
@@ -43,15 +50,18 @@ public class VentaServiceImpl implements VentaService {
             "total", "total",
             "estado", "estado");
     private static final String ORDEN_POR_DEFECTO = "fecha";
+    private static final int TAMANIO_MAXIMO = 100;                        // ← S14 pag
 
     public VentaServiceImpl(
             VentaRepository ventaRepository,
             ClienteRepository clienteRepository,
-            ProductoRepository productoRepository) {
+            ProductoRepository productoRepository,
+            ApplicationEventPublisher eventos) {                          // ← S14
 
         this.ventaRepository = ventaRepository;
         this.clienteRepository = clienteRepository;
         this.productoRepository = productoRepository;
+        this.eventos = eventos;                                           // ← S14
     }
 
     @Override
@@ -107,6 +117,16 @@ public class VentaServiceImpl implements VentaService {
 
         Venta guardada = ventaRepository.save(venta);
 
+        // ← S14: se registra en la bitácora solo cuando la transacción hace commit
+        eventos.publishEvent(EventoAuditoria.de("VENTA_REGISTRADA", "Venta",
+                guardada.getId(),
+                "total=" + guardada.getTotal()
+                        + " | items=" + guardada.getDetalles().size()));
+
+        log.info("Venta registrada | id={} | clienteId={} | total={} | items={}",  // ← S14
+                guardada.getId(), cliente.getId(), guardada.getTotal(),
+                guardada.getDetalles().size());
+
         return convertirResponse(guardada);
     }
 
@@ -127,19 +147,23 @@ public class VentaServiceImpl implements VentaService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<VentaResponseDTO> buscarVentas(
-            Long clienteId,
-            EstadoVenta estado,
-            LocalDate desde,
-            LocalDate hasta,
-            String ordenarPor,
-            String direccion) {
+    public PaginaResponseDTO<VentaResponseDTO> buscarVentas(              // ← S14 pag
+                                                                          Long clienteId,
+                                                                          EstadoVenta estado,
+                                                                          LocalDate desde,
+                                                                          LocalDate hasta,
+                                                                          String ordenarPor,
+                                                                          String direccion,
+                                                                          int pagina,                                                   // ← S14 pag
+                                                                          int tamanio) {                                                // ← S14 pag
 
         long inicio = System.currentTimeMillis();
 
         log.info("Inicio buscar ventas | clienteId={} | estado={} | "
-                        + "desde={} | hasta={} | ordenarPor={} | direccion={}",
-                clienteId, estado, desde, hasta, ordenarPor, direccion);
+                        + "desde={} | hasta={} | ordenarPor={} | direccion={} | "
+                        + "pagina={} | tamanio={}",
+                clienteId, estado, desde, hasta, ordenarPor, direccion,
+                pagina, tamanio);
 
         if (desde != null
                 && hasta != null
@@ -152,7 +176,18 @@ public class VentaServiceImpl implements VentaService {
                             + hasta + ")");
         }
 
-        Sort sort = construirSort(ordenarPor, direccion);
+        // ← S14 pag: rechazar valores fuera de rango (409)
+        if (pagina < 0) {
+            throw new ReglaNegocioException("La página no puede ser negativa");
+        }
+        if (tamanio < 1 || tamanio > TAMANIO_MAXIMO) {
+            throw new ReglaNegocioException(
+                    "El tamaño de página debe estar entre 1 y " + TAMANIO_MAXIMO);
+        }
+
+        // ← S14 pag: desempate por id para que ninguna venta se repita entre páginas
+        Sort sort = construirSort(ordenarPor, direccion).and(Sort.by("id").descending());
+        Pageable pageable = PageRequest.of(pagina, tamanio, sort);
 
         LocalDateTime desdeHora = (desde == null)
                 ? null
@@ -162,21 +197,21 @@ public class VentaServiceImpl implements VentaService {
                 ? null
                 : hasta.atTime(LocalTime.MAX);
 
-        List<VentaResponseDTO> resultado =
+        Page<VentaResponseDTO> resultado =                                // ← S14 pag
                 ventaRepository
-                        .buscar(clienteId, estado, desdeHora, hastaHora, sort)
-                        .stream()
-                        .map(this::convertirResponse)
-                        .toList();
+                        .buscar(clienteId, estado, desdeHora, hastaHora, pageable)
+                        .map(this::convertirResponse);
 
         log.info("Fin buscar ventas | clienteId={} | estado={} | "
                         + "desde={} | hasta={} | orden={} {} | "
-                        + "filas={} | duracionMs={}",
+                        + "pagina={} | filas={} | total={} | duracionMs={}",
                 clienteId, estado, desde, hasta, ordenarPor, direccion,
-                resultado.size(),
+                pagina,
+                resultado.getNumberOfElements(),
+                resultado.getTotalElements(),
                 System.currentTimeMillis() - inicio);
 
-        return resultado;
+        return PaginaResponseDTO.de(resultado);
     }
 
     private Sort construirSort(String ordenarPor, String direccion) {

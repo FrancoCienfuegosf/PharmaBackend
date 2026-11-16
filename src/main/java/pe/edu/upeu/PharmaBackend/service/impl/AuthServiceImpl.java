@@ -5,10 +5,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;          // ← S14
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pe.edu.upeu.PharmaBackend.auditoria.EventoAuditoria;               // ← S14
 import pe.edu.upeu.PharmaBackend.dto.auth.CambioPasswordRequestDTO;
 import pe.edu.upeu.PharmaBackend.dto.auth.LoginRequestDTO;
 import pe.edu.upeu.PharmaBackend.dto.auth.LoginResponseDTO;
@@ -20,6 +22,7 @@ import pe.edu.upeu.PharmaBackend.mapper.UsuarioMapper;
 import pe.edu.upeu.PharmaBackend.repository.UsuarioRepository;
 import pe.edu.upeu.PharmaBackend.security.JwtService;
 import pe.edu.upeu.PharmaBackend.security.PermisosPorRol;
+import pe.edu.upeu.PharmaBackend.service.service.AuditoriaService;        // ← S14
 import pe.edu.upeu.PharmaBackend.service.service.AuthService;
 
 import java.nio.charset.StandardCharsets;
@@ -36,18 +39,21 @@ public class AuthServiceImpl implements AuthService {
     private final UsuarioRepository usuarioRepository;
     private final UsuarioMapper usuarioMapper;
     private final PasswordEncoder passwordEncoder;
+    private final AuditoriaService auditoriaService;                       // ← S14
 
     public AuthServiceImpl(
             AuthenticationManager authenticationManager,
             JwtService jwtService,
             UsuarioRepository usuarioRepository,
             UsuarioMapper usuarioMapper,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            AuditoriaService auditoriaService) {                           // ← S14
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.usuarioRepository = usuarioRepository;
         this.usuarioMapper = usuarioMapper;
         this.passwordEncoder = passwordEncoder;
+        this.auditoriaService = auditoriaService;                          // ← S14
     }
 
     /*
@@ -57,7 +63,12 @@ public class AuthServiceImpl implements AuthService {
      * que GlobalExceptionHandler convierte en 401.
      * 2. Si todo es correcto, se emite el JWT.
      *
-     * La contrasena NUNCA se escribe en el log.
+     * S14: el login fallido y el exitoso se registran en la bitácora
+     * directamente (no por evento): el fallido termina en excepción y no
+     * habría commit que esperar. AuditoriaService.registrar usa
+     * REQUIRES_NEW, así que se guarda en su propia transacción.
+     *
+     * La contrasena NUNCA se escribe en el log ni en la bitácora.
      */
     @Override
     @Transactional(readOnly = true)
@@ -67,8 +78,17 @@ public class AuthServiceImpl implements AuthService {
 
         log.info("Intento de inicio de sesión: usuario={}", username);
 
-        Authentication autenticacion = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(username, request.getPassword()));
+        Authentication autenticacion;
+        try {                                                              // ← S14
+            autenticacion = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(username, request.getPassword()));
+        } catch (AuthenticationException ex) {
+            log.warn("Inicio de sesión fallido: usuario={} motivo={}",
+                    username, ex.getClass().getSimpleName());
+            auditoriaService.registrar(
+                    EventoAuditoria.login("LOGIN_FALLIDO", username));
+            throw ex;   // GlobalExceptionHandler sigue respondiendo 401
+        }
 
         UserDetails principal = (UserDetails) autenticacion.getPrincipal();
         Usuario usuario = buscar(principal.getUsername());
@@ -77,10 +97,7 @@ public class AuthServiceImpl implements AuthService {
 
         List<String> roles = usuarioMapper.nombresRoles(usuario.getRoles());
 
-        log.info("Inicio de sesión correcto: usuario={} roles={}",
-                usuario.getUsername(), roles);
-
-        return new LoginResponseDTO(
+        LoginResponseDTO respuesta = new LoginResponseDTO(
                 token,
                 "Bearer",
                 jwtService.getExpiracionSegundos(),
@@ -89,6 +106,15 @@ public class AuthServiceImpl implements AuthService {
                 roles,
                 PermisosPorRol.permisos(usuario.getRoles())
         );
+
+        // ← S14: se registra al final, cuando ya no puede fallar nada
+        auditoriaService.registrar(
+                EventoAuditoria.login("LOGIN_EXITOSO", usuario.getUsername()));
+
+        log.info("Inicio de sesión correcto: usuario={} roles={}",
+                usuario.getUsername(), roles);
+
+        return respuesta;
     }
 
     @Override

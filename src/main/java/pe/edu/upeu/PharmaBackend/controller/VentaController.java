@@ -5,6 +5,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import pe.edu.upeu.PharmaBackend.dto.PaginaResponseDTO;                    // ← S14
 import pe.edu.upeu.PharmaBackend.dto.VentaRequestDTO;
 import pe.edu.upeu.PharmaBackend.dto.VentaResponseDTO;
 import pe.edu.upeu.PharmaBackend.enums.EstadoVenta;
@@ -57,27 +58,33 @@ public class VentaController {
 
 
     @GetMapping("/buscar")
-    public ResponseEntity<List<VentaResponseDTO>> buscar(
+    public ResponseEntity<PaginaResponseDTO<VentaResponseDTO>> buscar(      // ← S14
 
-            @RequestParam(required = false)
-            Long clienteId,
+                                                                            @RequestParam(required = false)
+                                                                            Long clienteId,
 
-            @RequestParam(required = false)
-            EstadoVenta estado,
+                                                                            @RequestParam(required = false)
+                                                                            EstadoVenta estado,
 
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate desde,
+                                                                            @RequestParam(required = false)
+                                                                            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+                                                                            LocalDate desde,
 
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate hasta,
+                                                                            @RequestParam(required = false)
+                                                                            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+                                                                            LocalDate hasta,
 
-            @RequestParam(required = false, defaultValue = "fecha")
-            String ordenarPor,
+                                                                            @RequestParam(required = false, defaultValue = "fecha")
+                                                                            String ordenarPor,
 
-            @RequestParam(required = false, defaultValue = "desc")
-            String direccion) {
+                                                                            @RequestParam(required = false, defaultValue = "desc")
+                                                                            String direccion,
+
+                                                                            @RequestParam(defaultValue = "0")                              // ← S14
+                                                                            int pagina,
+
+                                                                            @RequestParam(defaultValue = "20")                             // ← S14
+                                                                            int tamanio) {
 
         return ResponseEntity.ok(
                 ventaService.buscarVentas(
@@ -86,7 +93,9 @@ public class VentaController {
                         desde,
                         hasta,
                         ordenarPor,
-                        direccion
+                        direccion,
+                        pagina,                                            // ← S14
+                        tamanio                                            // ← S14
                 )
         );
     }

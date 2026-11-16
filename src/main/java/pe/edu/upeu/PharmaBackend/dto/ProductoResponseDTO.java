@@ -25,4 +25,8 @@ public class ProductoResponseDTO implements Serializable {
     private String categoriaNombre;
     private LocalDateTime fechaCreacion;
     private LocalDateTime fechaModificacion;
+
+    // Auditoría (sesión 14): los llena JPA con el usuario del token
+    private String creadoPor;
+    private String modificadoPor;
 }

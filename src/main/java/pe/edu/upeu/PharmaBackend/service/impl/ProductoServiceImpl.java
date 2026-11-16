@@ -1,16 +1,19 @@
 package pe.edu.upeu.PharmaBackend.service.impl;
 
+import java.math.BigDecimal;                                               // ← S14
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;              // ← S14
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pe.edu.upeu.PharmaBackend.auditoria.EventoAuditoria;               // ← S14
 import pe.edu.upeu.PharmaBackend.dto.PaginaResponseDTO;
 import pe.edu.upeu.PharmaBackend.dto.ProductoRequestDTO;
 import pe.edu.upeu.PharmaBackend.dto.ProductoResponseDTO;
@@ -28,14 +31,18 @@ public class ProductoServiceImpl implements ProductoService {
     private static final Logger LOG = LoggerFactory.getLogger(ProductoServiceImpl.class);
 
     private static final Set<String> CAMPOS_ORDEN = Set.of("id", "nombre", "precio", "stock");
+    private static final int TAMANIO_MAXIMO = 100;                         // ← S14
 
     private final ProductoRepository productoRepository;
     private final CategoriaRepository categoriaRepository;
+    private final ApplicationEventPublisher eventos;                       // ← S14
 
     public ProductoServiceImpl(ProductoRepository productoRepository,
-                               CategoriaRepository categoriaRepository) {
+                               CategoriaRepository categoriaRepository,
+                               ApplicationEventPublisher eventos) {        // ← S14
         this.productoRepository = productoRepository;
         this.categoriaRepository = categoriaRepository;
+        this.eventos = eventos;                                            // ← S14
     }
 
     @Override
@@ -82,6 +89,8 @@ public class ProductoServiceImpl implements ProductoService {
 
         Categoria categoria = buscarCategoria(t.getCategoriaId());
 
+        BigDecimal precioAnterior = producto.getPrecio();                  // ← S14: ANTES de modificar
+
         producto.setNombre(nombre);
         producto.setPrecio(t.getPrecio());
         producto.setStock(t.getStock());
@@ -89,6 +98,14 @@ public class ProductoServiceImpl implements ProductoService {
         producto.setCategoria(categoria);
 
         Producto prodActualizado = productoRepository.saveAndFlush(producto);
+
+        // ← S14: solo si el precio realmente cambió (compareTo ignora 10.0 vs 10.00)
+        if (precioAnterior.compareTo(prodActualizado.getPrecio()) != 0) {
+            eventos.publishEvent(EventoAuditoria.de("PRECIO_MODIFICADO", "Producto",
+                    prodActualizado.getId(),
+                    prodActualizado.getNombre() + ": "
+                            + precioAnterior + " -> " + prodActualizado.getPrecio()));
+        }
 
         return convertirResponse(prodActualizado);
     }
@@ -122,6 +139,10 @@ public class ProductoServiceImpl implements ProductoService {
 
         producto.setEstado(false);
         productoRepository.save(producto);
+
+        // ← S14: eliminación lógica, queda quién la hizo
+        eventos.publishEvent(EventoAuditoria.de("PRODUCTO_ELIMINADO", "Producto",
+                producto.getId(), producto.getNombre()));
     }
 
     @Override
@@ -140,6 +161,15 @@ public class ProductoServiceImpl implements ProductoService {
     public PaginaResponseDTO<ProductoResponseDTO> listar(
             int pagina, int tamanio, String ordenarPor, String direccion) {
 
+        // ← S14: rechazar valores fuera de rango (409) en vez de corregirlos en silencio
+        if (pagina < 0) {
+            throw new ReglaNegocioException("La página no puede ser negativa");
+        }
+        if (tamanio < 1 || tamanio > TAMANIO_MAXIMO) {
+            throw new ReglaNegocioException(
+                    "El tamaño de página debe estar entre 1 y " + TAMANIO_MAXIMO);
+        }
+
         if (!CAMPOS_ORDEN.contains(ordenarPor)) {
             throw new ReglaNegocioException(
                     "No se puede ordenar por " + ordenarPor
@@ -149,8 +179,9 @@ public class ProductoServiceImpl implements ProductoService {
         Sort.Direction dir = "desc".equalsIgnoreCase(direccion)
                 ? Sort.Direction.DESC : Sort.Direction.ASC;
 
+        // ← S14: desempate por id para que el orden sea estable entre páginas
         Pageable pageable = PageRequest.of(
-                Math.max(pagina, 0), Math.max(tamanio, 1), Sort.by(dir, ordenarPor));
+                pagina, tamanio, Sort.by(dir, ordenarPor).and(Sort.by("id")));
 
         Page<ProductoResponseDTO> resultado = productoRepository
                 .findAll(pageable)
@@ -177,7 +208,9 @@ public class ProductoServiceImpl implements ProductoService {
                 producto.getCategoria().getId(),
                 producto.getCategoria().getNombre(),
                 producto.getFechaCreacion(),
-                producto.getFechaModificacion()
+                producto.getFechaModificacion(),
+                producto.getCreadoPor(),                                   // ← S14
+                producto.getModificadoPor()                                // ← S14
         );
     }
 }

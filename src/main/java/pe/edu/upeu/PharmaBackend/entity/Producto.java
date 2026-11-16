@@ -7,12 +7,16 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.springframework.data.annotation.CreatedBy;                      // ← S14
+import org.springframework.data.annotation.LastModifiedBy;                 // ← S14
+import org.springframework.data.jpa.domain.support.AuditingEntityListener; // ← S14
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "productos")
+@EntityListeners(AuditingEntityListener.class)                             // ← S14
 @Getter
 @Setter
 @NoArgsConstructor
@@ -49,4 +53,13 @@ public class Producto {
     @UpdateTimestamp
     @Column(name = "fecha_modificacion")
     private LocalDateTime fechaModificacion;
+
+    // ← S14: auditoría, los llena Spring Data con el usuario del token
+    @CreatedBy
+    @Column(name = "creado_por", length = 50, updatable = false)
+    private String creadoPor;
+
+    @LastModifiedBy
+    @Column(name = "modificado_por", length = 50)
+    private String modificadoPor;
 }

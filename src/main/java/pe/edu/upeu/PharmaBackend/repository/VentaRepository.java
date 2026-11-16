@@ -1,6 +1,8 @@
 package pe.edu.upeu.PharmaBackend.repository;
 
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;                              // ← S14 pag
+import org.springframework.data.domain.Pageable;                          // ← S14 pag
+import org.springframework.data.jpa.repository.EntityGraph;               // ← S14 pag
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,23 +16,38 @@ import java.util.List;
 
 public interface VentaRepository extends JpaRepository<Venta, Long> {
 
-    @Query("""
-            select distinct v
+    /*
+     * S14: búsqueda paginada en el servidor.
+     * - Sin "join fetch" de colecciones: con paginación, Hibernate tendría
+     *   que traer todo y paginar en memoria (HHH90003004).
+     * - El cliente (ManyToOne) se trae en la misma consulta con @EntityGraph.
+     * - Los detalles y sus productos se cargan por lotes
+     *   (hibernate.default_batch_fetch_size), no uno por venta.
+     * - countQuery explícita: cuenta solo ventas, sin joins innecesarios.
+     */
+    @EntityGraph(attributePaths = "cliente")
+    @Query(value = """
+            select v
             from Venta v
-            left join fetch v.cliente c
-            left join fetch v.detalles d
-            left join fetch d.producto p
-            where (:clienteId is null or c.id = :clienteId)
+            where (:clienteId is null or v.cliente.id = :clienteId)
+              and (:estado    is null or v.estado = :estado)
+              and (:desde     is null or v.fechaRegistro >= :desde)
+              and (:hasta     is null or v.fechaRegistro <= :hasta)
+            """,
+            countQuery = """
+            select count(v)
+            from Venta v
+            where (:clienteId is null or v.cliente.id = :clienteId)
               and (:estado    is null or v.estado = :estado)
               and (:desde     is null or v.fechaRegistro >= :desde)
               and (:hasta     is null or v.fechaRegistro <= :hasta)
             """)
-    List<Venta> buscar(
+    Page<Venta> buscar(
             @Param("clienteId") Long clienteId,
             @Param("estado") EstadoVenta estado,
             @Param("desde") LocalDateTime desde,
             @Param("hasta") LocalDateTime hasta,
-            Sort sort);
+            Pageable pageable);
 
     @Query("""
             select new pe.edu.upeu.PharmaBackend.dto.VentaPorCategoriaDTO(

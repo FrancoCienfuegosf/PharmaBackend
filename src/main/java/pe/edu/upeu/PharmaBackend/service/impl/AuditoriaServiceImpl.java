@@ -1,4 +1,84 @@
 package pe.edu.upeu.PharmaBackend.service.impl;
 
-public class AuditoriaServiceImpl {
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import pe.edu.upeu.PharmaBackend.auditoria.EventoAuditoria;
+import pe.edu.upeu.PharmaBackend.dto.AuditoriaEventoDTO;
+import pe.edu.upeu.PharmaBackend.dto.PaginaResponseDTO;
+import pe.edu.upeu.PharmaBackend.entity.AuditoriaEvento;
+import pe.edu.upeu.PharmaBackend.exception.ReglaNegocioException;
+import pe.edu.upeu.PharmaBackend.repository.AuditoriaEventoRepository;
+import pe.edu.upeu.PharmaBackend.service.service.AuditoriaService;
+
+@Service
+public class AuditoriaServiceImpl implements AuditoriaService {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(AuditoriaServiceImpl.class);
+
+    private static final int TAMANIO_MAXIMO = 100;
+
+    private final AuditoriaEventoRepository repository;
+
+    public AuditoriaServiceImpl(AuditoriaEventoRepository repository) {
+        this.repository = repository;
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void registrar(EventoAuditoria evento) {
+        AuditoriaEvento a = new AuditoriaEvento();
+        a.setFecha(LocalDateTime.now());
+        a.setUsuario(evento.usuario());
+        a.setAccion(evento.accion());
+        a.setEntidad(evento.entidad());
+        a.setEntidadId(evento.entidadId());
+        a.setDetalle(evento.detalle());
+        a.setRequestId(evento.requestId());
+        repository.save(a);
+        log.info("Auditoría {} | {} {} | usuario={}", evento.accion(),
+                evento.entidad(), evento.entidadId(), evento.usuario());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PaginaResponseDTO<AuditoriaEventoDTO> buscar(
+            String usuario, String accion, LocalDate desde, LocalDate hasta,
+            int pagina, int tamanio) {
+
+        if (pagina < 0) {
+            throw new ReglaNegocioException("La página no puede ser negativa");
+        }
+        if (tamanio < 1 || tamanio > TAMANIO_MAXIMO) {
+            throw new ReglaNegocioException(
+                    "El tamaño de página debe estar entre 1 y " + TAMANIO_MAXIMO);
+        }
+        if (desde != null && hasta != null && desde.isAfter(hasta)) {
+            throw new ReglaNegocioException(
+                    "El rango de fechas es inválido: 'desde' es posterior a 'hasta'");
+        }
+
+        // Lo más reciente primero; id como desempate estable
+        Pageable pageable = PageRequest.of(pagina, tamanio,
+                Sort.by(Sort.Direction.DESC, "fecha").and(Sort.by(Sort.Direction.DESC, "id")));
+
+        return PaginaResponseDTO.de(repository.buscar(
+                vacioANulo(usuario), vacioANulo(accion),
+                desde == null ? null : desde.atStartOfDay(),
+                hasta == null ? null : hasta.plusDays(1).atStartOfDay(),
+                pageable).map(AuditoriaEventoDTO::de));
+    }
+
+    private static String vacioANulo(String texto) {
+        return texto == null || texto.isBlank() ? null : texto.trim();
+    }
 }
