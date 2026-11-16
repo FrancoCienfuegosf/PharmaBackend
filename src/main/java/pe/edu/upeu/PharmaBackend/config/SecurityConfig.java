@@ -1,10 +1,10 @@
 package pe.edu.upeu.PharmaBackend.config;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
-import
-        org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -20,6 +20,7 @@ import pe.edu.upeu.PharmaBackend.security.JwtAuthenticationFilter;
 import pe.edu.upeu.PharmaBackend.security.JwtService;
 import pe.edu.upeu.PharmaBackend.security.RestAccessDeniedHandler;
 import pe.edu.upeu.PharmaBackend.security.RestAuthenticationEntryPoint;
+
 import static pe.edu.upeu.PharmaBackend.enums.Permiso.CATALOGO_ESCRIBIR;
 import static pe.edu.upeu.PharmaBackend.enums.Permiso.CATALOGO_LEER;
 import static pe.edu.upeu.PharmaBackend.enums.Permiso.CLIENTES_ESCRIBIR;
@@ -27,6 +28,7 @@ import static pe.edu.upeu.PharmaBackend.enums.Permiso.CLIENTES_LEER;
 import static pe.edu.upeu.PharmaBackend.enums.Permiso.USUARIOS_ADMINISTRAR;
 import static pe.edu.upeu.PharmaBackend.enums.Permiso.VENTAS_LEER;
 import static pe.edu.upeu.PharmaBackend.enums.Permiso.VENTAS_REGISTRAR;
+
 /*
  * Cadena de seguridad de la API.
  *
@@ -43,6 +45,7 @@ import static pe.edu.upeu.PharmaBackend.enums.Permiso.VENTAS_REGISTRAR;
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
+
     private static final String[] RUTAS_PUBLICAS = {
             "/api/v1/auth/login",
             "/api/health",
@@ -54,6 +57,7 @@ public class SecurityConfig {
             "/v3/api-docs/**",
             "/error"
     };
+
     @Bean
     public SecurityFilterChain filterChain(
             HttpSecurity http,
@@ -62,8 +66,10 @@ public class SecurityConfig {
             CorsConfigurationSource corsConfigurationSource,
             RestAuthenticationEntryPoint authenticationEntryPoint,
             RestAccessDeniedHandler accessDeniedHandler) throws Exception {
+
         JwtAuthenticationFilter jwtFilter =
                 new JwtAuthenticationFilter(jwtService, userDetailsService);
+
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .logout(AbstractHttpConfigurer::disable)
@@ -71,53 +77,54 @@ public class SecurityConfig {
                 .sessionManagement(sesion ->
                         sesion.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-// Publicas
 
+                        // Publicas
                         .requestMatchers(RUTAS_PUBLICAS).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-// Catalogo: todos leen; solo ADMIN y ALMACENERO escriben
 
+                        // Catalogo: todos leen; solo ADMIN y ALMACENERO escriben
                         .requestMatchers(HttpMethod.GET,
-
                                 "/api/v1/categorias/**", "/api/v1/productos/**")
                         .hasAuthority(CATALOGO_LEER.name())
-
                         .requestMatchers(
-
                                 "/api/v1/categorias/**", "/api/v1/productos/**")
                         .hasAuthority(CATALOGO_ESCRIBIR.name())
-// Clientes
 
+                        // Clientes
                         .requestMatchers(HttpMethod.GET, "/api/v1/clientes/**")
                         .hasAuthority(CLIENTES_LEER.name())
                         .requestMatchers("/api/v1/clientes/**")
                         .hasAuthority(CLIENTES_ESCRIBIR.name())
-// Ventas
 
+                        // Ventas
                         .requestMatchers(HttpMethod.POST, "/api/v1/ventas")
                         .hasAuthority(VENTAS_REGISTRAR.name())
                         .requestMatchers(HttpMethod.GET, "/api/v1/ventas/**")
                         .hasAuthority(VENTAS_LEER.name())
                         .requestMatchers("/api/v1/ventas/**")
                         .hasAuthority(VENTAS_REGISTRAR.name())
-// Administracion de la seguridad
-                        .requestMatchers("/api/v1/usuarios/**",
 
-                                "/api/v1/empleados/**", "/api/v1/roles/**")
+                        // Administracion de la seguridad y bitacora de auditoria
+                        .requestMatchers("/api/v1/usuarios/**",
+                                "/api/v1/empleados/**", "/api/v1/roles/**",
+                                "/api/v1/auditoria/**")
                         .hasAuthority(USUARIOS_ADMINISTRAR.name())
-// Resto de Actuator (metrics, info): solo quien administra usuarios
+
+                        // Resto de Actuator (metrics, info): solo quien administra usuarios
                         .requestMatchers("/actuator/**")
                         .hasAuthority(USUARIOS_ADMINISTRAR.name())
-// Todo lo demas (auth/me, reportes...) exige un usuario
-// autenticado; los reportes ademas usan @PreAuthorize.
+
+                        // Todo lo demas (auth/me, reportes...) exige un usuario
+                        // autenticado; los reportes ademas usan @PreAuthorize.
                         .anyRequest().authenticated())
                 .exceptionHandling(errores -> errores
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
-
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+
         return http.build();
     }
+
     /*
      * BCrypt: hash lento y con "sal" aleatoria. La misma contrasena
      * produce un hash distinto cada vez y no se puede revertir.
@@ -126,6 +133,7 @@ public class SecurityConfig {
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
+
     /*
      * Spring arma el AuthenticationManager con el UserDetailsService
      * (UsuarioDetailsService) y el PasswordEncoder declarados.
