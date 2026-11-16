@@ -5,8 +5,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pe.edu.upeu.PharmaBackend.auditoria.EventoAuditoria;
 import pe.edu.upeu.PharmaBackend.dto.CategoriaRequestDTO;
 import pe.edu.upeu.PharmaBackend.dto.CategoriaResponseDTO;
 import pe.edu.upeu.PharmaBackend.entity.Categoria;
@@ -20,9 +22,12 @@ public class CategoriaServiceImpl implements CategoriaService {
     private static final Logger LOG = LoggerFactory.getLogger(CategoriaServiceImpl.class);
 
     private final CategoriaRepository categoriaRepository;
+    private final ApplicationEventPublisher eventos;
 
-    public CategoriaServiceImpl(CategoriaRepository categoriaRepository) {
+    public CategoriaServiceImpl(CategoriaRepository categoriaRepository,
+                                ApplicationEventPublisher eventos) {
         this.categoriaRepository = categoriaRepository;
+        this.eventos = eventos;
     }
 
     @Override
@@ -88,6 +93,11 @@ public class CategoriaServiceImpl implements CategoriaService {
                 )
         );
         categoriaRepository.delete(categoria);
+
+        // Auditoría: se registra solo si la transacción se confirma
+        eventos.publishEvent(EventoAuditoria.de(
+                "CATEGORIA_ELIMINADA", "Categoria",
+                categoria.getId(), categoria.getNombre()));
     }
 
     @Override
